@@ -1,0 +1,16 @@
+{
+  "name": "leadhunt",
+  "version": "1.0.0",
+  "description": "Automated lead generation for web dev services",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/server.ts",
+    "start": "bun run src/server.ts",
+    "scrape": "bun run src/scrape.ts"
+  },
+  "dependencies": {
+    "hono": "^4.7.0",
+    "puppeteer": "^24.0.0",
+    "grammy": "^1.35.0"
+  }
+}
