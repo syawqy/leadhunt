@@ -1,4 +1,4 @@
-import db, { getSetting } from "../db";
+import db, { getSetting, normalizeUrl } from "../db";
 import puppeteer from "puppeteer";
 
 // --- Intent-based prefilter ---
@@ -114,6 +114,11 @@ export async function scrapeWeb(): Promise<{ found: number; new: number }> {
           // Skip junk domains
           if (JUNK_DOMAINS.some((d) => url.includes(d))) continue;
 
+          // SKIP reddit threads: DDG gives no post date for them, and Reddit IDs
+          // cannot be decoded to a date — old threads (years) would pass as "hot".
+          // Reddit leads come from the Reddit OAuth scraper instead (has created_utc).
+          if (url.includes("reddit.com")) continue;
+
           const text = `${result.title} ${result.snippet}`;
 
           // Prefilter: must have buying intent, must NOT be offering/job-seeking
@@ -127,8 +132,7 @@ export async function scrapeWeb(): Promise<{ found: number; new: number }> {
           if (exists) continue;
 
           let platform = "web";
-          if (url.includes("reddit.com")) platform = "reddit";
-          else if (url.includes("x.com") || url.includes("twitter.com")) platform = "twitter";
+          if (url.includes("x.com") || url.includes("twitter.com")) platform = "twitter";
 
           db.prepare(`
             INSERT OR IGNORE INTO leads (source, source_id, source_url, title, body, score, category, platform)
@@ -136,7 +140,7 @@ export async function scrapeWeb(): Promise<{ found: number; new: number }> {
           `).run(
             "web",
             sourceId,
-            result.url,
+            normalizeUrl(result.url),
             result.title,
             result.snippet,
             0.5, // LLM will re-score

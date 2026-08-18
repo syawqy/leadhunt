@@ -179,6 +179,22 @@ export async function triagePendingLeads(): Promise<number> {
         else if (result.score >= 50 && result.is_lead) category = "warm";
         else if (!result.is_lead) category = "spam";
 
+        // DATE GUARD: a lead with a verified old post_date can never be hot/warm.
+        // (web-scraped reddit threads have no post_date → stay cold unless user verifies)
+        const ageDays = lead.post_date
+          ? Math.floor((Date.now() - Date.parse(lead.post_date)) / 86400000)
+          : null;
+        if (ageDays !== null) {
+          if (ageDays > 30) category = "cold";
+          else if (ageDays > 14 && category === "hot") category = "warm";
+        }
+        if (!lead.post_date && lead.source === "web") {
+          if (category === "hot" || category === "warm") {
+            category = "cold";
+            result.reasoning = (result.reasoning || "") + " | No verifiable post date (web-scraped)";
+          }
+        }
+
         db.prepare(`
           UPDATE leads SET
             score = ?, category = ?,

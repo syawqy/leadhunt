@@ -1,4 +1,4 @@
-import db, { getSetting } from "../db";
+import db, { getSetting, normalizePostDate, normalizeUrl } from "../db";
 
 // Reddit OAuth (script app): https://www.reddit.com/prefs/apps
 // Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET in env.
@@ -90,21 +90,23 @@ export async function scrapeReddit(): Promise<{ found: number; new: number; skip
 
         // Preliminary score: flair is a strong signal
         const score = isHiringFlair ? 0.7 : 0.5;
+        const postDate = normalizePostDate(post.created_utc * 1000);
 
         db.prepare(`
-          INSERT OR IGNORE INTO leads (source, source_id, source_url, title, body, author, score, category, platform, tags)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT OR IGNORE INTO leads (source, source_id, source_url, title, body, author, score, category, platform, tags, post_date)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           "reddit",
           post.id,
-          `https://reddit.com${post.permalink}`,
+          normalizeUrl(`https://reddit.com${post.permalink}`),
           post.title,
           post.selftext?.slice(0, 2000) || "",
           post.author || "",
           score,
           isHiringFlair ? "hot" : "warm", // LLM will re-score later
           `r/${sub}`,
-          JSON.stringify(isHiringFlair ? ["[Hiring]"] : ["hiring-text"])
+          JSON.stringify(isHiringFlair ? ["[Hiring]"] : ["hiring-text"]),
+          postDate
         );
 
         newLeads++;

@@ -19,10 +19,14 @@ app.get("/api/leads", (c) => {
   const category = c.req.query("category") || "all";
   const source = c.req.query("source") || "all";
   const search = c.req.query("search") || "";
+  const days = parseInt(c.req.query("days") || "0");
   const limit = parseInt(c.req.query("limit") || "50");
   const offset = parseInt(c.req.query("offset") || "0");
 
-  const leads = getLeads({ category, source, search, limit, offset });
+  const leads = getLeads({
+    category, source, search, limit, offset,
+    max_age_days: days > 0 ? days : undefined,
+  });
   return c.json(leads);
 });
 
@@ -253,6 +257,13 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
     <button class="filter-btn" data-filter="warm" onclick="setFilter('warm',this)">🟡 Warm</button>
     <button class="filter-btn" data-filter="cold" onclick="setFilter('cold',this)">🔵 Cold</button>
     <button class="filter-btn" data-filter="spam" onclick="setFilter('spam',this)">🗑️ Spam</button>
+    <select class="search-input" style="width:auto" onchange="setDays(this.value)">
+      <option value="0">📅 Semua tanggal</option>
+      <option value="7">📅 7 hari terakhir</option>
+      <option value="14">📅 14 hari</option>
+      <option value="30">📅 30 hari</option>
+      <option value="90">📅 90 hari</option>
+    </select>
     <input class="search-input" placeholder="🔍 Search leads..." oninput="debounceSearch(this.value)" />
   </div>
 
@@ -261,6 +272,7 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
   <script>
     let currentFilter = 'all';
     let searchQuery = '';
+    let daysFilter = 0;
     let searchTimeout;
 
     async function loadStats() {
@@ -320,7 +332,7 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
                 <span class="score-bar"><span class="score-fill \${scoreClass}" style="width:\${scorePct}%"></span></span>
                 \${scorePct}%
               </span>
-              <span>\${new Date(l.created_at).toLocaleDateString()}</span>
+              <span>\${l.post_date ? '📅 ' + escHtml(l.post_date.slice(0, 10)) : '📅 tgl tidak diketahui'}</span>
               <span>\${llmInfo}</span>
               <div class="lead-actions">
                 <button class="btn btn-sm btn-primary" onclick="setCategory(\${l.id},'hot')">🔥</button>
@@ -340,6 +352,11 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
       currentFilter = f;
       document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
       el.classList.add('active');
+      loadLeads();
+    }
+
+    function setDays(d) {
+      daysFilter = parseInt(d) || 0;
       loadLeads();
     }
 

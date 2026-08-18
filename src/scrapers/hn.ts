@@ -1,8 +1,11 @@
-import db from "../db";
+import db, { normalizePostDate, normalizeUrl } from "../db";
 
 // Hacker News Algolia API — free, reliable, no auth.
 // Sources: "Ask HN: Who is hiring?" comments, "Seeking Freelancer" threads,
 // and posts where people explicitly ask for help building things.
+
+// Only keep posts newer than this many days (HN has real timestamps)
+const MAX_AGE_DAYS = 30;
 
 interface HNItem {
   objectID: string;
@@ -47,11 +50,18 @@ export async function scrapeHN(): Promise<{ found: number; new: number }> {
       const hits: HNItem[] = data?.hits ?? [];
 
       for (const hit of hits) {
+        // Skip old posts — HN created_at is the post date
+        if (hit.created_at) {
+          const ageDays = (Date.now() - Date.parse(hit.created_at)) / 86400000;
+          if (ageDays > MAX_AGE_DAYS) continue;
+        }
+
         // Comments: use story_title + text; Stories: use title + text
         const title = hit.title || hit.story_title || "";
         const body = hit.text?.replace(/<[^>]+>/g, "").slice(0, 1500) || "";
         const author = hit.author || "";
-        const url = hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`;
+        const url = normalizeUrl(hit.url || `https://news.ycombinator.com/item?id=${hit.objectID}`);
+        const postDate = normalizePostDate(hit.created_at);
 
         const text = `${title} ${body}`;
         // Quick prefilter — must look like someone wants to BUILD something
@@ -62,8 +72,8 @@ export async function scrapeHN(): Promise<{ found: number; new: number }> {
         if (exists) continue;
 
         db.prepare(`
-          INSERT OR IGNORE INTO leads (source, source_id, source_url, title, body, author, score, category, platform)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT OR IGNORE INTO leads (source, source_id, source_url, title, body, author, score, category, platform, post_date)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           "hn",
           hit.objectID,
@@ -73,7 +83,8 @@ export async function scrapeHN(): Promise<{ found: number; new: number }> {
           author,
           0.5,
           "unreviewed",
-          "hackernews"
+          "hackernews",
+          postDate
         );
 
         newLeads++;

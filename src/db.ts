@@ -63,6 +63,7 @@ if (!has("llm_project_type")) db.exec("ALTER TABLE leads ADD COLUMN llm_project_
 if (!has("llm_reasoning")) db.exec("ALTER TABLE leads ADD COLUMN llm_reasoning TEXT DEFAULT ''");
 if (!has("llm_pitch")) db.exec("ALTER TABLE leads ADD COLUMN llm_pitch TEXT DEFAULT ''");
 if (!has("llm_triaged")) db.exec("ALTER TABLE leads ADD COLUMN llm_triaged INTEGER DEFAULT 0");
+if (!has("post_date")) db.exec("ALTER TABLE leads ADD COLUMN post_date TEXT DEFAULT ''");
 
 // Seed default settings
 const defaultSettings: Record<string, string> = {
@@ -91,12 +92,47 @@ export function setSetting(key: string, value: string): void {
   db.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)").run(key, value);
 }
 
+/** Normalize a scraped URL: ensure https:// prefix, fix bare domains. */
+export function normalizeUrl(raw: string): string {
+  if (!raw) return "";
+  let url = raw.trim();
+  // Strip common cruft from DDG result__url extraction
+  url = url.replace(/^https?:\/\/(www\.)?/, "");
+  if (url.startsWith("www.")) url = url.slice(4);
+  // Remove trailing slash variants
+  url = url.replace(/\/+$/, "");
+  // Handle DDG redirect URLs like //duckduckgo.com/l/?uddg=...
+  if (url.includes("duckduckgo.com/l/?uddg=")) {
+    const m = url.match(/uddg=([^&]+)/);
+    if (m) url = decodeURIComponent(m[1]);
+  }
+  return `https://${url}`;
+}
+
+/** Age of a lead in days based on post_date (fallback: created_at scrape time). */
+export function getLeadAgeDays(lead: any): number | null {
+  const base = lead.post_date || lead.created_at;
+  if (!base) return null;
+  const t = Date.parse(base);
+  if (isNaN(t)) return null;
+  return Math.floor((Date.now() - t) / 86400000);
+}
+
+/** Normalize post_date from various source formats to YYYY-MM-DD HH:MM:SS. */
+export function normalizePostDate(raw: string | number | Date | undefined | null): string {
+  if (!raw) return "";
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 19).replace("T", " ");
+}
+
 export function getLeads(opts: {
   category?: string;
   source?: string;
   limit?: number;
   offset?: number;
   search?: string;
+  max_age_days?: number; // filter: only leads with post_date (or created) within N days
 } = {}): any[] {
   let query = "SELECT * FROM leads WHERE 1=1";
   const params: any[] = [];
@@ -112,6 +148,11 @@ export function getLeads(opts: {
   if (opts.search) {
     query += " AND (title LIKE ? OR body LIKE ?)";
     params.push(`%${opts.search}%`, `%${opts.search}%`);
+  }
+  if (opts.max_age_days) {
+    // Use post_date if available, else created_at. Compare as ISO strings works for same format.
+    query += ` AND datetime(COALESCE(NULLIF(post_date,''), created_at)) >= datetime('now', ?)`;
+    params.push(`-${opts.max_age_days} days`);
   }
 
   query += " ORDER BY created_at DESC";
