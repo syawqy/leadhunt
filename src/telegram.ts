@@ -21,10 +21,13 @@ export async function sendTelegramNotification(): Promise<number> {
     return 0;
   }
 
-  // Get unnotified hot/warm leads
+  // Only LLM-triaged HOT leads that haven't been notified
   const leads = db.prepare(`
     SELECT * FROM leads
-    WHERE notified = 0 AND category IN ('hot', 'warm')
+    WHERE notified = 0
+      AND llm_triaged = 1
+      AND category IN ('hot', 'warm')
+      AND llm_intent = 'hiring'
     ORDER BY score DESC, created_at DESC
     LIMIT 10
   `).all() as any[];
@@ -35,20 +38,26 @@ export async function sendTelegramNotification(): Promise<number> {
   for (const lead of leads) {
     try {
       const emoji = lead.category === "hot" ? "🔥" : "🟡";
-      const scoreBar = "█".repeat(Math.round(lead.score * 10)) + "░".repeat(10 - Math.round(lead.score * 10));
+      const scorePct = Math.round(lead.score * 100);
+      const budgetEmoji = lead.llm_budget === "high" ? "💰" : lead.llm_budget === "medium" ? "💵" : "";
+      const urgencyEmoji = lead.llm_urgency === "high" ? "⚡" : "";
 
       const msg = [
-        `${emoji} *New Lead!* (${lead.source})`,
+        `${emoji} *New Lead!* (${lead.source}) ${budgetEmoji} ${urgencyEmoji}`,
         "",
         `*${escapeMarkdown(lead.title)}*`,
         lead.body ? `\n${escapeMarkdown(lead.body.slice(0, 300))}` : "",
         "",
-        `📊 Score: \`${scoreBar}\` ${(lead.score * 100).toFixed(0)}%`,
-        `🏷️ ${lead.category.toUpperCase()} | ${lead.platform || lead.source}`,
-        `👤 u/${lead.author || "unknown"}`,
+        `📊 Score: ${scorePct}/100 | ${lead.category.toUpperCase()}`,
+        lead.llm_project_type ? `🛠️ ${lead.llm_project_type}` : "",
+        lead.llm_budget !== "none" ? `💵 Budget: ${lead.llm_budget}` : "",
+        lead.llm_urgency !== "none" ? `⚡ Urgency: ${lead.llm_urgency}` : "",
+        `📍 ${lead.platform || lead.source}${lead.author ? ` | 👤 ${lead.author}` : ""}`,
+        "",
+        lead.llm_pitch ? `💬 *Suggested pitch:*\n${escapeMarkdown(lead.llm_pitch)}` : "",
         "",
         `🔗 [View Lead](${lead.source_url})`,
-      ].join("\n");
+      ].filter(Boolean).join("\n");
 
       await b.api.sendMessage(chatId, msg, {
         parse_mode: "Markdown",
@@ -82,15 +91,17 @@ export async function sendSummary(): Promise<void> {
       COUNT(*) as total,
       SUM(CASE WHEN category = 'hot' THEN 1 ELSE 0 END) as hot,
       SUM(CASE WHEN category = 'warm' THEN 1 ELSE 0 END) as warm,
-      SUM(CASE WHEN notified = 0 AND category IN ('hot','warm') THEN 1 ELSE 0 END) as pending
+      SUM(CASE WHEN llm_triaged = 1 AND llm_intent = 'hiring' THEN 1 ELSE 0 END) as real_leads,
+      SUM(CASE WHEN notified = 0 AND category IN ('hot','warm') AND llm_intent = 'hiring' THEN 1 ELSE 0 END) as pending
     FROM leads
   `).get() as any;
 
   const msg = [
-    "📊 *LeadHunt Daily Summary*",
+    "📊 *LeadHunt Summary*",
     "",
     `Total leads: *${stats.total}*`,
     `🔥 Hot: *${stats.hot}* | 🟡 Warm: *${stats.warm}*`,
+    `✅ Real (LLM-verified hiring): *${stats.real_leads}*`,
     `📬 Pending notify: *${stats.pending}*`,
     "",
     `_Updated: ${new Date().toISOString().slice(0, 16).replace("T", " ")} UTC_`,

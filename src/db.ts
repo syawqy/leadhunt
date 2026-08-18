@@ -53,6 +53,17 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_leads_created ON leads(created_at DESC);
 `);
 
+// Migrate: add LLM classification columns if missing
+const cols = db.prepare("PRAGMA table_info(leads)").all() as any[];
+const has = (name: string) => cols.some((c: any) => c.name === name);
+if (!has("llm_intent")) db.exec("ALTER TABLE leads ADD COLUMN llm_intent TEXT DEFAULT ''");
+if (!has("llm_budget")) db.exec("ALTER TABLE leads ADD COLUMN llm_budget TEXT DEFAULT ''");
+if (!has("llm_urgency")) db.exec("ALTER TABLE leads ADD COLUMN llm_urgency TEXT DEFAULT ''");
+if (!has("llm_project_type")) db.exec("ALTER TABLE leads ADD COLUMN llm_project_type TEXT DEFAULT ''");
+if (!has("llm_reasoning")) db.exec("ALTER TABLE leads ADD COLUMN llm_reasoning TEXT DEFAULT ''");
+if (!has("llm_pitch")) db.exec("ALTER TABLE leads ADD COLUMN llm_pitch TEXT DEFAULT ''");
+if (!has("llm_triaged")) db.exec("ALTER TABLE leads ADD COLUMN llm_triaged INTEGER DEFAULT 0");
+
 // Seed default settings
 const defaultSettings: Record<string, string> = {
   telegram_bot_token: "",
@@ -122,7 +133,9 @@ export function getLeadStats(): any {
       SUM(CASE WHEN notified = 1 THEN 1 ELSE 0 END) as notified,
       SUM(CASE WHEN source = 'reddit' THEN 1 ELSE 0 END) as from_reddit,
       SUM(CASE WHEN source = 'twitter' THEN 1 ELSE 0 END) as from_twitter,
-      SUM(CASE WHEN source = 'web' THEN 1 ELSE 0 END) as from_web
+      SUM(CASE WHEN source = 'web' THEN 1 ELSE 0 END) as from_web,
+      SUM(CASE WHEN source = 'hn' THEN 1 ELSE 0 END) as from_hn,
+      SUM(CASE WHEN llm_triaged = 1 AND llm_intent = 'hiring' THEN 1 ELSE 0 END) as real_leads
     FROM leads
   `).get();
 }

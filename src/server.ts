@@ -268,13 +268,14 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
       const s = await res.json();
       document.getElementById('stats').innerHTML = \`
         <div class="stat-card"><div class="value">\${s.total || 0}</div><div class="label">Total Leads</div></div>
+        <div class="stat-card"><div class="value" style="color:#22c55e">\${s.real_leads || 0}</div><div class="label">✅ Real Leads</div></div>
         <div class="stat-card stat-hot"><div class="value">\${s.hot || 0}</div><div class="label">🔥 Hot</div></div>
         <div class="stat-card stat-warm"><div class="value">\${s.warm || 0}</div><div class="label">🟡 Warm</div></div>
         <div class="stat-card stat-cold"><div class="value">\${s.cold || 0}</div><div class="label">🔵 Cold</div></div>
         <div class="stat-card"><div class="value">\${s.notified || 0}</div><div class="label">📬 Notified</div></div>
         <div class="stat-card"><div class="value">\${(s.from_reddit||0)}</div><div class="label">Reddit</div></div>
-        <div class="stat-card"><div class="value">\${(s.from_twitter||0)}</div><div class="label">Twitter</div></div>
         <div class="stat-card"><div class="value">\${(s.from_web||0)}</div><div class="label">Web</div></div>
+        <div class="stat-card"><div class="value">\${(s.from_hn||0)}</div><div class="label">HN</div></div>
       \`;
     }
 
@@ -297,6 +298,13 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
         const badgeClass = 'badge-' + l.category;
         const sourceClass = 'badge-' + l.source;
 
+        const llmInfo = l.llm_triaged ? [
+          l.llm_intent ? '<span style="color:#22c55e">🎯 ' + escHtml(l.llm_intent) + '</span>' : '',
+          l.llm_project_type && l.llm_project_type !== 'unknown' ? '<span>🛠️ ' + escHtml(l.llm_project_type) + '</span>' : '',
+          l.llm_budget && l.llm_budget !== 'none' ? '<span>💵 ' + escHtml(l.llm_budget) + '</span>' : '',
+          l.llm_urgency && l.llm_urgency !== 'none' ? '<span>⚡ ' + escHtml(l.llm_urgency) + '</span>' : '',
+        ].filter(Boolean).join(' · ') : '<span style="color:#64748b">⏳ pending LLM...</span>';
+
         return \`
           <div class="lead-card">
             <div class="lead-header">
@@ -313,6 +321,7 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
                 \${scorePct}%
               </span>
               <span>\${new Date(l.created_at).toLocaleDateString()}</span>
+              <span>\${llmInfo}</span>
               <div class="lead-actions">
                 <button class="btn btn-sm btn-primary" onclick="setCategory(\${l.id},'hot')">🔥</button>
                 <button class="btn btn-sm btn-warning" onclick="setCategory(\${l.id},'warm')">🟡</button>

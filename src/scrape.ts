@@ -1,8 +1,8 @@
 import { scrapeReddit } from "./scrapers/reddit";
 import { scrapeWeb } from "./scrapers/web";
-import { scrapeTwitter } from "./scrapers/twitter";
+import { scrapeHN } from "./scrapers/hn";
+import { triagePendingLeads } from "./llm";
 import { sendTelegramNotification } from "./telegram";
-import db from "./db";
 
 export async function runScrape(): Promise<void> {
   console.log(`\n🔍 [${new Date().toISOString()}] Starting scrape...`);
@@ -11,7 +11,7 @@ export async function runScrape(): Promise<void> {
   const results = await Promise.allSettled([
     scrapeReddit(),
     scrapeWeb(),
-    scrapeTwitter(),
+    scrapeHN(),
   ]);
 
   let totalFound = 0;
@@ -26,11 +26,16 @@ export async function runScrape(): Promise<void> {
 
   console.log(`✅ Scrape complete: ${totalFound} found, ${totalNew} new leads`);
 
-  // Send notifications for new leads
+  // Phase 2: LLM triage all untriaged leads
   if (totalNew > 0) {
-    const notified = await sendTelegramNotification();
-    console.log(`📬 Sent ${notified} Telegram notifications`);
+    console.log("🧠 Running LLM triage...");
+    const triaged = await triagePendingLeads();
+    console.log(`🧠 Triaged ${triaged} leads`);
   }
+
+  // Send notifications for hot/warm leads
+  const notified = await sendTelegramNotification();
+  console.log(`📬 Telegram: ${notified} notifications`);
 }
 
 // Run if called directly
